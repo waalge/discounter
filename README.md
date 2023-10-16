@@ -159,3 +159,11 @@ but is much easier to reason about.
 #### Fcfs with exclusivity
 
 Expanding the context when applying an offer we could handle exclusivity case. (to be expanded upon)
+
+## TODOs 
+
+- Many more tests 
+- Implement more offer types 
+- System to manage offers / read in from file 
+- Handle exclusivity (use a `discount` tracking which items it uses and whether or not it is exclusive.)
+- Use clojure specs
