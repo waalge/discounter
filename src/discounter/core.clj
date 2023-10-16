@@ -1,8 +1,11 @@
 (ns discounter.core
-   [clojure.string :as str]
-   [clojure.java.io :as io]
-   [clojure.tools.cli :refer [parse-opts]])
-    (:gen-class))
+   (:require 
+    [clojure.string :as str]
+    [clojure.data.csv :as csv]
+    [clojure.java.io :as io]
+    [clojure.tools.cli :refer [parse-opts]]
+  )
+  (:gen-class))
 
 ;; Types 
 
@@ -78,7 +81,9 @@
 ;; Strategy 
 
 (defn apply-offer [products basket offer]
-  (let [discount (apply (offer :logic) [products basket])]
+  (let [discount 
+    (apply (offer :logic) [products basket])
+    ]
     (if (> discount 0) 
       [[(offer :id) (offer :pretty-name) discount]]
       []
@@ -90,52 +95,19 @@
   [products basket offers]
   (reduce #(concat %1 (apply-offer products basket %2)) [] offers))
 
+;; CLI 
+
 (def cli-options
   [
    ["-b" "--basket BASKET" "filepath of basket. Expect a csv of rows as (product-id, quantity)"
     :default "./my-basket.csv"
-    :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]
     ]
-   ["-H" "--hostname HOST" "Remote host"
-    :default  "localhost"
-    ;; Specify a string to output in the default column in the options summary
-    ;; if the default value's string representation is very ugly
-    :default-desc "localhost"]
-   ;; If no required argument description is given, the option is assumed to
-   ;; be a boolean option defaulting to nil
-   [nil "--detach" "Detach from controlling process"]
-   ["-v" nil "Verbosity level; may be specified multiple times to increase value"
-    ;; If no long-option is specified, an option :id must be given
-    :id :verbosity
-    :default 0
-    ;; Use :update-fn to create non-idempotent options (:default is applied first)
-    :update-fn inc]
-   ["-f" "--file NAME" "File names to read"
-    :multi true ; use :update-fn to combine multiple instance of -f/--file
-    :default []
-    ;; with :multi true, the :update-fn is passed both the existing parsed
-    ;; value(s) and the new parsed value from each option
-    :update-fn conj]
-   ;; A boolean option that can explicitly be set to false
-   ["-d" "--[no-]daemon" "Daemonize the process" :default true]
    ["-h" "--help"]])
 
-;; The :default values are applied first to options. Sometimes you might want
-;; to apply default values after parsing is complete, or specifically to
-;; compute a default value based on other option values in the map. For those
-;; situations, you can use :default-fn to specify a function that is called
-;; for any options that do not have a value after parsing is complete, and
-;; which is passed the complete, parsed option map as it's single argument.
-;; :default-fn (constantly 42) is effectively the same as :default 42 unless
-;; you have a non-idempotent option (with :update-fn or :assoc-fn) -- in which
-;; case any :default value is used as the initial option value rather than nil,
-;; and :default-fn will be called to compute the final option value if none was
-;; given on the command-line (thus, :default-fn can override :default)
-
 (defn usage [options-summary]
-  (->> ["This is my program. There are many like it, but this one is mine."
+  (->> ["Apply your offers to your basket"
         ""
-        "Usage: program-name [options] action"
+        "Usage: discounter [options] action"
         ""
         "Options:"
         options-summary
@@ -172,4 +144,44 @@
   (println msg)
   (System/exit status))
 
-(defn -main [& args] ())
+
+(defn get-csv [filepath]
+  (with-open [reader (io/reader filepath)]
+    (doall
+      (csv/read-csv reader)))
+ )
+
+(defn read-basket 
+  "FIXME : I cannot get clojure to sensibly parse this"
+  [filepath]
+  (into [] (for [row (get-csv filepath)] (struct item (Integer/parseInt (first row)) (Integer/parseInt (second row)))))
+ )
+
+(def default-products-raw
+  "FIXME : make this import from file"
+  [[0 "prod1" 123 :item "Product 1"]
+   [1 "prod2" 456 :item "Product 2"]
+   [2 "prod3" 1   :gram "Product 3"] ; TODO: Switch to floats or manage precision.
+   [3 "prod4" 1234 :item "Product 4"]
+   [4 "prod5" 5678 :item "Product 5"]])
+
+(def default-offers-raw
+  "FIXME : make this import from file"
+  [[0 (partial bogof-products [0 1]) "BOGOF on Product 1 and Product 2"]
+   [1 (partial bogof-product 3) "BOGOF on Product 4"]])
+
+
+(defn runner
+  [options]
+  (let [products (parse-table product default-products-raw)
+        offers (parse-table offer default-offers-raw)
+        basket (read-basket (options :basket))
+        ]
+    (println (one-pass-strategy products basket offers))))
+
+(defn -main [& args]
+  (let [{:keys [action options exit-message ok?]} (validate-args args)]
+    (if exit-message
+      (exit (if ok? 0 1) exit-message)
+      (case action
+        "run"  (runner options)))))
